@@ -1,0 +1,430 @@
+<apex:page standardController="contributor__c" extensions="sendmail" recordSetVar="contributors" sidebar="false">
+<link rel="stylesheet" type="text/css" href="{!URLFOR($Resource.sfbootstrap_zip, 'sfbootstrap/dist/css/bootstrap.css')}" />
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.16/angular.min.js"></script>
+<script type="text/javascript" src="{!URLFOR($Resource.sfbootstrap_zip, 'sfbootstrap/dist/js/bootstrap.min.js')}"></script>
+<script>
+angular.module('npopack', [])
+.controller('sendmail', function($scope, $filter, $q, $http){
+    $scope.callback_success = function(message){
+        $scope.remoting.result = 'success';
+        if (message != null){
+            $scope.remoting.status = message;
+        }
+    }
+    
+    $scope.callback_error = function(message){
+        $scope.remoting.result = 'danger';
+        if (message != null){
+            $scope.remoting.alerts.push(message);
+        }
+    }
+
+	$scope.remove_destination = function(index){
+		$scope.destinations.splice(index, 1);
+	}
+
+	$scope.send = function(destinations, mail){
+		$scope.init_remoting();
+
+		var destination_ids = [];
+		angular.forEach(destinations, function(dest, key){
+			destination_ids.push(dest.Id);
+		})
+		if (destination_ids.length < 1){
+			$scope.callback_error('{!$label.destination_not_set}');
+			return;
+		}
+
+		if (mail.subject__c == null || mail.subject__c == ''){
+			$scope.callback_error('{!$label.subject_not_set}');
+			return;
+		}
+
+		if (mail.sender__c == null || mail.sender__c == ''){
+			$scope.callback_error('{!$label.sender_not_set}');
+			return;
+		}
+
+		if (mail.body__c == null || mail.body__c == ''){
+			$scope.callback_error('{!$label.body_not_set}');
+			return;
+		}
+
+		$scope.d_send(destination_ids, mail.sender__c, mail.subject__c, mail.body__c)
+		.then(
+			function(NumOfSentMail){
+				$scope.remoting.progress = 100;
+				$scope.callback_success(NumOfSentMail + '{!$label.x_mails_sent}');
+			},
+			function(event){
+				$scope.callback_error(event.message);
+			}
+		);
+	}
+
+	$scope.d_send = function(destination_ids, sender, subject, body){
+		var d = $q.defer();
+		Visualforce.remoting.Manager.invokeAction(
+			'{!$RemoteAction.sendmail.send}',
+			destination_ids,
+			sender,
+			subject,
+			body,
+			function(result, event){
+				if (event.status){
+					d.resolve(result);
+				} else {
+					d.reject(event);
+				}
+			},
+			{escape: true}
+		);
+		return d.promise;
+	}
+
+	$scope.create_template = function(mail){
+		$scope.init_remoting();
+
+		if (mail.subject__c == null || mail.subject__c == ''){
+			$scope.callback_error('{!$label.subject_not_set}');
+			return;
+		}
+
+		if (mail.sender__c == null || mail.sender__c == ''){
+			mail.sender__c = ''
+		}
+
+		if (mail.body__c == null || mail.body__c == ''){
+			mail.body__c = ''
+		}
+
+		mail.Name = mail.subject__c;
+
+		$scope.d_create_template(mail)
+		.then(
+			function(){
+				return $scope.d_get_templates();
+			},
+			function(event){
+				return $q.reject(event);
+			}
+		)
+		.then(
+			function(mail_templates){
+				$scope.remoting.progress = 100;
+				$scope.mail_templates = mail_templates;
+				$scope.callback_success('{!$label.template_saved}');
+			},
+			function(event){
+				$scope.callback_error(event.message);
+			}
+		);
+	}
+
+	$scope.d_create_template = function(mail_template){
+		var d = $q.defer();
+
+		var mail_template_for_create = angular.copy(mail_template);
+		delete mail_template_for_create.Id;
+
+		Visualforce.remoting.Manager.invokeAction(
+			'{!$RemoteAction.sendmail.create_template}',
+			mail_template_for_create,
+			function(result, event){
+				if (event.status){
+					d.resolve(result);
+				} else {
+					d.reject(event);
+				}
+			},
+			{escape: true}
+		);
+		return d.promise;
+	}
+
+	$scope.update_template = function(mail_template){
+		$scope.init_remoting();
+
+		if (mail_template == null || mail_template.Id == null){
+			$scope.callback_error('{!$label.template_not_set}');
+			return;
+		}
+
+		if (mail_template.Name == null || mail_template.Name == ''){
+			$scope.callback_error('{!$label.subject_not_set}');
+			return;
+		}
+
+		$scope.d_update_template(mail_template)
+		.then(
+			function(){
+				return $scope.d_get_templates();
+			},
+			function(event){
+				return $q.reject(event);
+			}
+		)
+		.then(
+			function(mail_templates){
+				$scope.remoting.progress = 100;
+				$scope.mail_templates = mail_templates;
+				$scope.callback_success('{!$label.template_updated}');
+			},
+			function(event){
+				$scope.callback_error(event.message);
+			}
+		);
+	}
+
+	$scope.d_update_template = function(mail_template){
+		var d = $q.defer();
+
+		var mail_template_for_update = angular.copy(mail_template);
+		delete mail_template_for_update.$$hashKey;
+
+		Visualforce.remoting.Manager.invokeAction(
+			'{!$RemoteAction.sendmail.update_template}',
+			mail_template_for_update,
+			function(result, event){
+				if (event.status){
+					d.resolve(result);
+				} else {
+					d.reject(event);
+				}
+			},
+			{escape: true}
+		);
+		return d.promise;
+	}
+
+	$scope.delete_template = function(template_id){
+		$scope.init_remoting();
+
+		if (template_id == null){
+			$scope.callback_error('{!$label.template_not_set}');
+			return;
+		}
+
+		$scope.d_delete_template(template_id)
+		.then(
+			function(){
+				return $scope.d_get_templates();
+			},
+			function(event){
+				return $q.reject(event);
+			}
+		)
+		.then(
+			function(mail_templates){
+				$scope.remoting.progress = 100;
+				$scope.mail_template = null;
+				$scope.mail_templates = mail_templates;
+				$scope.callback_success('{!$label.template_deleted}');
+			},
+			function(event){
+				$scope.callback_error(event.message);
+			}
+		);
+	}
+
+	$scope.d_delete_template = function(template_id){
+		var d = $q.defer();
+		Visualforce.remoting.Manager.invokeAction(
+			'{!$RemoteAction.sendmail.delete_template}',
+			template_id,
+			function(result, event){
+				if (event.status){
+					d.resolve(result);
+				} else {
+					d.reject(event);
+				}
+			},
+			{escape: true}
+		);
+		return d.promise;
+	}
+
+	$scope.d_get_templates = function(){
+		var d = $q.defer();
+		Visualforce.remoting.Manager.invokeAction(
+			'{!$RemoteAction.sendmail.get_templates}',
+			function(result, event){
+				if (event.status){
+					d.resolve(result);
+				} else {
+					d.reject(event);
+				}
+			},
+			{escape: true}
+		);
+		return d.promise;
+	}
+
+	$scope.init_form = function(){
+		$scope.sender = '';
+		$scope.subject = '';
+		$scope.body = '';
+	}
+
+    $scope.init_remoting = function(){
+        $scope.remoting = {};
+        $scope.remoting.result = 'primary';
+        $scope.remoting.status = null;
+        $scope.remoting.alerts = [];
+        $scope.remoting.progress = 1;
+    }
+
+    $scope.mail = {};
+    $scope.mail.sender__c = '{!JSENCODE($User.Email)}';
+	$scope.destinations = {!destinations_json};
+	$scope.show_template = false;
+
+	$scope.d_get_templates()
+	.then(
+		function(templates){
+			$scope.mail_templates = templates;
+		},
+		function(event){
+			console.log(event);
+		}
+	);
+});
+</script>
+<div class="sfbootstrap" ng-app="npopack">
+	<div class="container-fluid" style="margin-top: 10px; margin-bottom: 40px;" ng-controller="sendmail">
+		<div class="row">
+		<div class="col-sm-2">
+			<ul class="nav nav-pills nav-stacked">
+				<li class="active" style="margin-left:0;"><a href="#tab_mail_form" data-toggle="tab">{!$label.mail_form}</a></li>
+				<li><a href="#tab_destination" data-toggle="tab">{!$label.destination} <span class="badge">{{destinations.length}}</span></a></li>
+				<li><a href="#tab_template" data-toggle="tab">{!$label.template}</a></li>
+			</ul>
+		</div>
+
+		<div class="col-sm-10 tab-content">
+
+			<div class="tab-pane active" id="tab_mail_form">
+				<div class="panel panel-default">
+					<div class="panel-body">
+						<form class="form">
+							<div style="text-align:right;">
+								<a href="#" ng-click="show_template = !show_template"><span class="glyphicon glyphicon-pencil"></span>&nbsp;{!$label.create_based_on_template}</a>
+							</div>
+							<div class="form-group" ng-show="show_template">
+								<label class="control-label">{!$label.template}</label>
+								<select class="form-control" ng-model="mail" ng-options="mail_template.Name for mail_template in mail_templates"></select>
+							</div>
+							<div class="form-group">
+								<label class="control-label">{!$ObjectType.mail_template__c.Fields.subject__c.Label}</label>
+								<input class="form-control" type="text" placeholder="{!$ObjectType.mail_template__c.Fields.subject__c.Label}" ng-model="mail.subject__c" />
+							</div>
+							<div class="form-group">
+								<label class="control-label">{!$ObjectType.mail_template__c.Fields.sender__c.Label}</label>
+								<input class="form-control" type="text" placeholder="{!$ObjectType.mail_template__c.Fields.sender__c.Label}" ng-model="mail.sender__c" />
+							</div>
+							<div class="form-group">
+								<label class="control-label">{!$ObjectType.mail_template__c.Fields.body__c.Label}</label>
+								<textarea class="form-control" rows="15" placeholder="{!$ObjectType.mail_template__c.Fields.body__c.Label}" ng-model="mail.body__c" />
+							</div>
+							<div class="form-group">
+								<div class="progress progress-striped active" style="height:35px;" ng-show="remoting.result == 'primary'">
+									<div class="progress-bar progress-bar-primary" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%;">
+									</div>
+								</div>
+								<div class="alert alert-danger" ng-repeat="alert in remoting.alerts" ng-show="remoting.result == 'danger'">
+									{{alert}}
+								</div>
+								<div class="alert alert-success" ng-show="remoting.result == 'success'">
+									{{remoting.status}}
+								</div>
+								<div style="text-align:right;" ng-show="remoting.result != 'primary'">
+									<button class="btn btn-default" type="button" ng-click="create_template(mail)"><span class="glyphicon glyphicon-briefcase"></span>&nbsp;{!$label.save_as_template}</button>
+									<button class="btn btn-primary" type="button" ng-click="send(destinations, mail)"><span class="glyphicon glyphicon-envelope"></span>&nbsp;{!$label.send}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div><!-- tab_mail_form -->
+
+			<div class="tab-pane" id="tab_destination">
+				<div class="panel panel-default">
+					<div class="panel-heading input-group">
+						<span class="input-group-addon"><span class="glyphicon glyphicon-search"></span></span>
+						<input class="form-control" type="text" ng-model="search_for_destinations" />
+					</div>
+					
+					<table class="table" style="margin:10px 0;">
+						<thead>
+							<tr>
+								<th>{!$ObjectType.contributor__c.Fields.Name.Label}</th>
+								<th>{!$label.contributor_type}</th>
+								<th>{!$ObjectType.contributor__c.Fields.email__c.Label}</th>
+								<th>&nbsp;</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr ng-repeat="dest in destinations | filter:search_for_destinations">
+								<td>{{dest.Name}}</td>
+								<td>{{dest.RecordType.Name}}</td>
+								<td>{{dest.email__c}}</td>
+								<td style="text-align:right;"><button type="button" class="btn btn-xs btn-danger" ng-click="remove_destination($index)"><span class="glyphicon glyphicon-remove"></span>&nbsp;{!$label.delete}</button></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div><!-- tab_destination -->
+
+			<div class="tab-pane" id="tab_template">
+				<div class="panel panel-default">
+					<div class="panel-body">
+						<form class="form">
+							<div class="form-group">
+								<label class="control-label">{!$label.template}</label>
+								<select class="form-control" ng-model="mail_template" ng-options="mail_template.Name for mail_template in mail_templates"></select>
+							</div>
+							<div class="form-group">
+								<label class="control-label">{!$ObjectType.mail_template__c.Fields.Name.Label}</label>
+								<input class="form-control" type="text" placeholder="{!$ObjectType.mail_template__c.Fields.Name.Label}" ng-model="mail_template.Name" />
+							</div>
+							<div class="form-group">
+								<label class="control-label">{!$ObjectType.mail_template__c.Fields.subject__c.Label}</label>
+								<input class="form-control" type="text" placeholder="{!$ObjectType.mail_template__c.Fields.subject__c.Label}" ng-model="mail_template.subject__c" />
+							</div>
+							<div class="form-group">
+								<label class="control-label">{!$ObjectType.mail_template__c.Fields.sender__c.Label}</label>
+								<input class="form-control" type="text" placeholder="{!$ObjectType.mail_template__c.Fields.sender__c.Label}" ng-model="mail_template.sender__c" />
+							</div>
+							<div class="form-group">
+								<label class="control-label">{!$ObjectType.mail_template__c.Fields.body__c.Label}</label>
+								<textarea class="form-control" rows="15" placeholder="{!$ObjectType.mail_template__c.Fields.body__c.Label}" ng-model="mail_template.body__c" />
+							</div>
+							<div class="form-group">
+								<div class="progress progress-striped active" style="height:35px;" ng-show="remoting.result == 'primary'">
+									<div class="progress-bar progress-bar-primary" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%;">
+									</div>
+								</div>
+								<div class="alert alert-danger" ng-repeat="alert in remoting.alerts" ng-show="remoting.result == 'danger'">
+									{{alert}}
+								</div>
+								<div class="alert alert-success" ng-show="remoting.result == 'success'">
+									{{remoting.status}}
+								</div>
+								<div style="text-align:right;" ng-show="remoting.result != 'primary'">
+									<button class="btn btn-danger" type="button" ng-click="delete_template(mail_template.Id)"><span class="glyphicon glyphicon-remove"></span>&nbsp;{!$label.delete}</button>
+									<button class="btn btn-primary" type="button" ng-click="update_template(mail_template)"><span class="glyphicon glyphicon-ok"></span>&nbsp;{!$label.update}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div><!-- tab_template -->
+
+		</div><!-- tab-content -->
+		</div><!-- row -->
+
+	</div>
+</div>
+
+</apex:page>
